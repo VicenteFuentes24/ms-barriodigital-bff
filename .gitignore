@@ -1,0 +1,8 @@
+.env
+.env.*
+!.env.example
+barriodigitalbff/target/
+barriodigitalbff/.mvn/wrapper/maven-wrapper.jar
+barriodigitalbff/.vscode/
+.idea/
+*.iml
