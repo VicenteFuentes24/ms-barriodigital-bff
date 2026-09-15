@@ -48,38 +48,55 @@ public class SecurityConfig {
     }
 
     @Bean
-    SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
-        http
-                .cors(cors -> { })
-                .csrf(AbstractHttpConfigurer::disable)
-                .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-                .formLogin(AbstractHttpConfigurer::disable)
-                .httpBasic(AbstractHttpConfigurer::disable)
-                .exceptionHandling(exception -> exception
-                        .authenticationEntryPoint(authenticationEntryPoint)
-                        .accessDeniedHandler(accessDeniedHandler))
-                .authorizeHttpRequests(authorize -> authorize
-                        .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
-                        .requestMatchers("/api/bff/health", "/actuator/health").permitAll()
-                        .requestMatchers(HttpMethod.GET, "/api/bff/me").hasAuthority(REQUIRED_SCOPE)
-                        .requestMatchers(HttpMethod.PUT, "/api/requests/*/status").access(scopeAndRoles("Admin", "Operador"))
-                        .requestMatchers(HttpMethod.GET, "/api/requests", "/api/requests/**").access(scopeAndRoles("Admin", "Operador", "Cliente"))
-                        .requestMatchers(HttpMethod.POST, "/api/requests", "/api/requests/**").access(scopeAndRoles("Admin", "Operador", "Cliente"))
-                        .requestMatchers(HttpMethod.GET, "/api/catalog", "/api/catalog/**").access(scopeAndRoles("Admin", "Operador"))
-                        .requestMatchers(HttpMethod.POST, "/api/catalog", "/api/catalog/**").access(scopeAndRoles("Admin"))
-                        .requestMatchers(HttpMethod.PUT, "/api/catalog", "/api/catalog/**").access(scopeAndRoles("Admin"))
-                        .requestMatchers(HttpMethod.GET, "/api/report", "/api/report/**").access(scopeAndRoles("Admin"))
-                        .requestMatchers(HttpMethod.GET, "/api/audit", "/api/audit/**").access(scopeAndRoles("Admin", "Auditor"))
-                        .requestMatchers("/api/audit", "/api/audit/**").denyAll()
-                        .requestMatchers("/api/**").authenticated()
-                        .anyRequest().denyAll())
-                .oauth2ResourceServer(oauth2 -> oauth2
-                        .authenticationEntryPoint(authenticationEntryPoint)
-                        .accessDeniedHandler(accessDeniedHandler)
-                        .jwt(jwt -> jwt.jwtAuthenticationConverter(jwtAuthenticationConverter)));
+SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
+    http
+            .cors(cors -> { })
+            .csrf(AbstractHttpConfigurer::disable)
+            .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+            .formLogin(AbstractHttpConfigurer::disable)
+            .httpBasic(AbstractHttpConfigurer::disable)
+            .exceptionHandling(exception -> exception
+                    .authenticationEntryPoint(authenticationEntryPoint)
+                    .accessDeniedHandler(accessDeniedHandler))
+            .authorizeHttpRequests(authorize -> authorize
+                    .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
+                    .requestMatchers("/api/bff/health", "/actuator/health").permitAll()
+                    .requestMatchers(HttpMethod.GET, "/api/bff/me").hasAuthority(REQUIRED_SCOPE)
 
-        return http.build();
-    }
+                    .requestMatchers(HttpMethod.PUT, "/api/requests/*/status")
+                    .access(scopeAndRoles("Admin", "Operador"))
+
+                    .requestMatchers(HttpMethod.GET, "/api/requests", "/api/requests/**")
+                    .access(scopeAndRoles("Admin", "Operador", "Cliente"))
+
+                    .requestMatchers(HttpMethod.POST, "/api/requests", "/api/requests/**")
+                    .access(scopeAndRoles("Admin", "Operador", "Cliente"))
+
+                    .requestMatchers(HttpMethod.GET, "/api/catalog", "/api/catalog/**")
+                    .access(scopeAndRoles("Admin", "Operador", "Cliente"))
+
+                    .requestMatchers(HttpMethod.POST, "/api/catalog", "/api/catalog/**")
+                    .access(scopeAndRoles("Admin"))
+
+                    .requestMatchers(HttpMethod.PUT, "/api/catalog", "/api/catalog/**")
+                    .access(scopeAndRoles("Admin"))
+
+                    .requestMatchers(HttpMethod.GET, "/api/report", "/api/report/**")
+                    .access(scopeAndRoles("Admin"))
+
+                    .requestMatchers(HttpMethod.GET, "/api/audit", "/api/audit/**")
+                    .access(scopeAndRoles("Admin", "Auditor"))
+
+                    .requestMatchers("/api/audit", "/api/audit/**").denyAll()
+                    .requestMatchers("/api/**").authenticated()
+                    .anyRequest().denyAll())
+            .oauth2ResourceServer(oauth2 -> oauth2
+                    .authenticationEntryPoint(authenticationEntryPoint)
+                    .accessDeniedHandler(accessDeniedHandler)
+                    .jwt(jwt -> jwt.jwtAuthenticationConverter(jwtAuthenticationConverter)));
+
+    return http.build();
+}
 
     @Bean
     JwtDecoder jwtDecoder(
