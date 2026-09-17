@@ -1,116 +1,125 @@
 # ms-barriodigital-bff
 
-BFF de BarrioDigital para recibir llamadas del frontend React, validar access tokens JWT emitidos por Microsoft Entra ID y reenviar las solicitudes a los microservicios internos correspondientes.
-
-## Arquitectura
-
-```text
-React + MSAL
-  -> Authorization: Bearer <access_token>
-ms-barriodigital-bff
-  -> requests-service / catalog-service / report-service / audit-service
-```
-
-Más adelante el flujo puede incorporar AWS API Gateway delante del BFF sin cambiar el contrato actual del frontend.
+Backend for Frontend de BarrioDigital. Es la entrada de aplicación después de AWS API Gateway: valida nuevamente el JWT emitido por Microsoft Entra ID, aplica autorización por scope y rol, obtiene la identidad del usuario y deriva la solicitud al microservicio interno correspondiente.
 
 ## Stack
 
 - Java 21
-- Spring Boot 3.x
-- Maven
+- Spring Boot 3.3.6
 - Spring Web
 - Spring Security
 - OAuth2 Resource Server JWT
-- Validation
-- Actuator health
+- Actuator
+- Maven
 
-Este BFF no usa base de datos, JPA, Hibernate, entidades ni drivers. La persistencia vive en los microservicios de dominio.
+El BFF no tiene base de datos propia.
+
+## Flujo
+
+```text
+Frontend React + MSAL
+        |
+        | Bearer JWT
+        v
+AWS API Gateway
+  JWT Authorizer
+        |
+        v
+ms-barriodigital-bff :8080
+  Spring Security
+        |
+        +--> requests :8081
+        +--> catalog  :8082
+```
+
+API Gateway realiza una primera validación del token. El BFF vuelve a validar firma, issuer, vigencia y audience y luego revisa scope y roles antes de permitir el acceso a una ruta.
 
 ## Variables de entorno
 
-No se incluyen IDs reales ni secretos. El BFF no utiliza Client Secret.
+Crear `.env` dentro de `barriodigitalbff/` a partir de `.env.example`:
 
 ```env
-AZURE_TENANT_ID=
-AZURE_API_AUDIENCE=api://API_CLIENT_ID
+SERVER_PORT=8080
+AZURE_TENANT_ID=YOUR_TENANT_ID
+AZURE_API_AUDIENCE=YOUR_API_CLIENT_ID
 FRONTEND_ORIGIN=http://localhost:5173
 REQUESTS_SERVICE_URL=http://localhost:8081
 CATALOG_SERVICE_URL=http://localhost:8082
-REPORT_SERVICE_URL=http://localhost:8083
-AUDIT_SERVICE_URL=http://localhost:8084
 ```
 
-Ejemplo PowerShell:
-
-```powershell
-$env:AZURE_TENANT_ID="..."
-$env:AZURE_API_AUDIENCE="api://..."
-$env:FRONTEND_ORIGIN="http://localhost:5173"
-$env:REQUESTS_SERVICE_URL="http://localhost:8081"
-$env:CATALOG_SERVICE_URL="http://localhost:8082"
-$env:REPORT_SERVICE_URL="http://localhost:8083"
-$env:AUDIT_SERVICE_URL="http://localhost:8084"
-```
-
-## Ejecución
-
-Desde la carpeta Maven:
-
-```powershell
-cd .\barriodigitalbff
-.\mvnw.cmd spring-boot:run
-```
-
-El servicio escucha en:
+En Docker Compose las URLs internas se sobrescriben con los nombres DNS de los servicios:
 
 ```text
-http://localhost:8080
+http://requests:8081
+http://catalog:8082
 ```
 
-## JWT y seguridad
+`AZURE_API_AUDIENCE` debe coincidir con el claim `aud` del access token real.
 
-El BFF funciona como OAuth2 Resource Server. Valida:
+## Validación JWT
 
-- firma del JWT usando JWK de Microsoft Entra ID;
+El BFF valida:
+
+- firma usando las claves públicas de Microsoft;
+- issuer del tenant;
 - expiración y vigencia;
-- issuer `https://login.microsoftonline.com/${AZURE_TENANT_ID}/v2.0`;
-- audience configurado en `AZURE_API_AUDIENCE`;
+- audience esperada;
 - scope `access_as_user`;
-- roles `Admin`, `Operador`, `Cliente`, `Auditor`.
+- roles de aplicación.
 
-Los roles de Azure se convierten así internamente:
+Roles reconocidos:
 
-- `Admin` -> `ROLE_Admin`
-- `Operador` -> `ROLE_Operador`
-- `Cliente` -> `ROLE_Cliente`
-- `Auditor` -> `ROLE_Auditor`
+- `Admin`
+- `Operador`
+- `Cliente`
+- `Auditor`
 
-El scope se convierte con el estándar Spring:
+Los claims `roles` se convierten a authorities de Spring con prefijo `ROLE_`, y el scope se convierte a `SCOPE_access_as_user`.
 
-- `access_as_user` -> `SCOPE_access_as_user`
+## Matriz de autorización
 
-## Endpoints BFF
+| Operación | Admin | Operador | Cliente | Auditor |
+| --- | :---: | :---: | :---: | :---: |
+| `GET /api/bff/me` | Sí | Sí | Sí | Sí |
+| `GET /api/requests/**` | Sí | Sí | Sí | No |
+| `POST /api/requests/**` | Sí | Sí | Sí | No |
+| `PUT /api/requests/{id}/status` | Sí | Sí | No | No |
+| `GET /api/catalog/**` | Sí | Sí | Sí | No |
+| `POST /api/catalog/**` | Sí | No | No | No |
+| `PUT /api/catalog/**` | Sí | No | No | No |
+| `GET /api/report/**` | Sí | No | No | No |
+| `GET /api/audit/**` | Sí | No | No | Sí |
 
-### Público
+Todas las rutas de negocio requieren además `SCOPE_access_as_user`.
+
+## Identidad hacia los microservicios
+
+El BFF no confía en headers de identidad enviados por el navegador. Antes de reenviar la petición elimina valores externos de:
+
+```text
+Authorization
+X-User-Email
+X-User-Id
+X-User-Roles
+```
+
+Luego reconstruye la identidad a partir del JWT ya validado y envía internamente:
+
+```text
+X-User-Email
+X-User-Id
+X-User-Roles
+```
+
+Esto permite que Requests aplique reglas como “Cliente solo puede leer sus propios trámites” sin aceptar una identidad manipulada desde el frontend.
+
+## Endpoints propios
+
+### Públicos
 
 ```text
 GET /api/bff/health
 GET /actuator/health
-```
-
-Ejemplo:
-
-```powershell
-Invoke-RestMethod http://localhost:8080/api/bff/health
-```
-
-Respuesta:
-
-```json
-{
-  "status": "UP",
-  "service": "ms-barriodigital-bff"
-}
 ```
 
 ### Autenticado
@@ -119,21 +128,9 @@ Respuesta:
 GET /api/bff/me
 ```
 
-Requiere JWT válido y `SCOPE_access_as_user`.
+`/api/bff/me` devuelve información del JWT validado, como usuario, roles, scopes, issuer, audience y expiración. No devuelve el token.
 
-Ejemplo:
-
-```powershell
-Invoke-RestMethod `
-  -Uri http://localhost:8080/api/bff/me `
-  -Headers @{ Authorization = "Bearer <access_token>" }
-```
-
-Devuelve información segura del token: subject, name, username, roles, scopes, issuer, audience y expiresAt. No devuelve access token, refresh token ni secretos.
-
-## Proxy hacia microservicios
-
-El BFF preserva método HTTP, path, query parameters, body JSON, Content-Type, status HTTP y body de respuesta. También reenvía el Bearer token original.
+## Rutas proxy
 
 ```text
 /api/requests/** -> REQUESTS_SERVICE_URL
@@ -142,81 +139,27 @@ El BFF preserva método HTTP, path, query parameters, body JSON, Content-Type, s
 /api/audit/**    -> AUDIT_SERVICE_URL
 ```
 
-Si un microservicio no está disponible, responde 503 con JSON legible para el frontend.
+En la entrega actual, Docker Compose levanta BFF, Requests y Catalog. Las rutas de Report y Audit quedan definidas en el BFF para una integración posterior, pero esos dos servicios no forman parte del Compose actual.
 
-## Rutas esperadas por el frontend
+## Errores
 
-### Trámites
+- `401`: token ausente o inválido.
+- `403`: token válido sin scope o rol suficiente.
+- `404`: recurso inexistente devuelto por el servicio de dominio.
+- `503`: microservicio downstream no disponible.
 
-```text
-GET  /api/requests
-GET  /api/requests/{id}
-POST /api/requests
-PUT  /api/requests/{id}/status
+Los errores del BFF se devuelven en JSON.
+
+## Ejecución local
+
+```powershell
+cd .\barriodigitalbff
+.\mvnw.cmd spring-boot:run
 ```
 
-### Catálogo
+BFF: `http://localhost:8080`
 
-```text
-GET  /api/catalog/procedures
-POST /api/catalog/procedures
-PUT  /api/catalog/procedures/{id}
-```
-
-### Reportería
-
-```text
-GET /api/report/kpis?range=last24h
-GET /api/report/top-procedures?range=last7d
-```
-
-### Auditoría
-
-```text
-GET /api/audit
-GET /api/audit?user=test&date=2026-09-11&eventType=REQUEST_STATUS_CHANGED
-```
-
-## Matriz de autorización
-
-Todas las rutas de negocio requieren `SCOPE_access_as_user` más rol válido.
-
-| Ruta | Roles |
-| --- | --- |
-| `GET /api/requests/**` | Admin, Operador, Cliente |
-| `POST /api/requests/**` | Admin, Operador, Cliente |
-| `PUT /api/requests/{id}/status` | Admin, Operador |
-| `GET /api/catalog/**` | Admin, Operador |
-| `POST /api/catalog/**` | Admin |
-| `PUT /api/catalog/**` | Admin |
-| `GET /api/report/**` | Admin |
-| `GET /api/audit/**` | Admin, Auditor |
-
-Auditoría es solo lectura. Otros métodos sobre `/api/audit/**` son denegados.
-
-## Errores JSON
-
-El BFF responde JSON, no HTML, para errores relevantes:
-
-- `401 Unauthorized`: falta token o token inválido.
-- `403 Forbidden`: token válido sin rol/scope suficiente.
-- `404 Not Found`: recurso inexistente.
-- `500 Internal Server Error`: error inesperado.
-- `503 Service Unavailable`: microservicio downstream no disponible.
-
-Formato:
-
-```json
-{
-  "timestamp": "...",
-  "status": 503,
-  "error": "Service Unavailable",
-  "message": "El servicio de trámites no está disponible.",
-  "path": "/api/requests"
-}
-```
-
-## Tests y build
+## Tests
 
 ```powershell
 cd .\barriodigitalbff
@@ -224,15 +167,4 @@ cd .\barriodigitalbff
 .\mvnw.cmd clean package
 ```
 
-Los tests usan JWT mockeado solo en ambiente de pruebas. No dependen de Microsoft Entra real.
-
-## Pendiente
-
-Queda pendiente crear y ejecutar los microservicios reales:
-
-- requests-service
-- catalog-service
-- report-service
-- audit-service
-
-Cuando existan, basta configurar sus URLs con las variables de entorno correspondientes.
+Las pruebas incluidas cubren autenticación, autorización por rol, validación de audience y propagación segura de identidad hacia los servicios internos.
