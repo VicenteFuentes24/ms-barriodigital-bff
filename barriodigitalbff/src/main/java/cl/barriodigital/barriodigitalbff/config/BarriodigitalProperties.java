@@ -8,6 +8,36 @@ public class BarriodigitalProperties {
     private Security security = new Security();
     private Frontend frontend = new Frontend();
     private Services services = new Services();
+    private Http http = new Http();
+
+    public Http getHttp() {
+        return http;
+    }
+
+    public void setHttp(Http http) {
+        this.http = http;
+    }
+
+    public static class Http {
+        private int connectTimeoutMs = 2000;
+        private int readTimeoutMs = 15000;
+
+        public int getConnectTimeoutMs() {
+            return connectTimeoutMs;
+        }
+
+        public void setConnectTimeoutMs(int connectTimeoutMs) {
+            this.connectTimeoutMs = connectTimeoutMs;
+        }
+
+        public int getReadTimeoutMs() {
+            return readTimeoutMs;
+        }
+
+        public void setReadTimeoutMs(int readTimeoutMs) {
+            this.readTimeoutMs = readTimeoutMs;
+        }
+    }
 
     public Security getSecurity() {
         return security;

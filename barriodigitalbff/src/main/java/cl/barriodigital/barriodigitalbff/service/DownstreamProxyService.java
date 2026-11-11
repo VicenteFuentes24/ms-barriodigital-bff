@@ -11,6 +11,10 @@ import cl.barriodigital.barriodigitalbff.security.AuthenticatedUserHeaders;
 import cl.barriodigital.barriodigitalbff.security.JwtIdentityExtractor;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.HttpHeaders;
+import org.springframework.security.authentication.InsufficientAuthenticationException;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.ResponseEntity;
@@ -54,6 +58,33 @@ public class DownstreamProxyService {
             String serviceName,
             HttpServletRequest request,
             byte[] body) {
+        return forwardInternal(baseUrl, serviceName, request, body, null);
+    }
+
+    /**
+     * For Audit only: forwards the bearer token from the already validated
+     * Spring Security context, never from untrusted inbound HTTP headers.
+     */
+    public ResponseEntity<byte[]> forwardWithAuthenticatedBearer(
+            String baseUrl,
+            String serviceName,
+            HttpServletRequest request,
+            byte[] body) {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (!(authentication instanceof JwtAuthenticationToken jwtAuthenticationToken)
+                || !authentication.isAuthenticated()) {
+            throw new InsufficientAuthenticationException("Se requiere un JWT autenticado para auditoría.");
+        }
+        return forwardInternal(baseUrl, serviceName, request, body,
+                jwtAuthenticationToken.getToken().getTokenValue());
+    }
+
+    private ResponseEntity<byte[]> forwardInternal(
+            String baseUrl,
+            String serviceName,
+            HttpServletRequest request,
+            byte[] body,
+            String authenticatedBearerToken) {
         URI targetUri = buildTargetUri(baseUrl, request);
         HttpMethod method = HttpMethod.valueOf(request.getMethod());
         AuthenticatedUserHeaders authenticatedUserHeaders = jwtIdentityExtractor.currentUserHeaders();
@@ -64,6 +95,9 @@ public class DownstreamProxyService {
                     .uri(targetUri)
                     .headers(headers -> {
                         copyRequestHeaders(request, headers);
+                        if (authenticatedBearerToken != null) {
+                            headers.setBearerAuth(authenticatedBearerToken);
+                        }
                         authenticatedUserHeaders.applyTo(headers);
                     });
 

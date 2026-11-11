@@ -1,6 +1,7 @@
 package cl.barriodigital.barriodigitalbff.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.io.IOException;
 import java.io.OutputStream;
@@ -19,6 +20,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.mock.web.MockHttpServletRequest;
+import org.springframework.security.authentication.InsufficientAuthenticationException;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.jwt.Jwt;
@@ -92,6 +94,33 @@ class DownstreamProxyServiceTest {
         assertThat(firstHeader("X-User-Id")).isEqualTo("real-id");
         assertThat(firstHeader("X-User-Roles")).isEqualTo("Admin");
         assertThat(firstHeader("Authorization")).isNull();
+    }
+
+    @Test
+    void auditForwardsOnlyTheValidatedJwtAndNeverTheInboundAuthorizationHeader() {
+        authenticate(jwtBuilder()
+                .claim("preferred_username", "admin@test.cl")
+                .claim("roles", List.of("Admin"))
+                .build());
+        MockHttpServletRequest request = request("GET", "/api/audit");
+        request.addHeader("Authorization", "Bearer attacker-controlled-token");
+
+        ResponseEntity<byte[]> response = proxyService.forwardWithAuthenticatedBearer(
+                baseUrl, "auditoría", request, null);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(firstHeader("Authorization")).isEqualTo("Bearer validated-token");
+        assertThat(firstHeader("X-User-Roles")).isEqualTo("Admin");
+    }
+
+    @Test
+    void auditRejectsRequestsWithoutAValidatedJwtEvenIfInboundHeaderExists() {
+        MockHttpServletRequest request = request("GET", "/api/audit");
+        request.addHeader("Authorization", "Bearer attacker-controlled-token");
+
+        assertThatThrownBy(() -> proxyService.forwardWithAuthenticatedBearer(
+                baseUrl, "auditoría", request, null))
+                .isInstanceOf(InsufficientAuthenticationException.class);
     }
 
     @Test

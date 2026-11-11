@@ -22,7 +22,7 @@ public class AuditProxyController {
 
     @RequestMapping(value = {"", "/**"}, method = RequestMethod.GET)
     public ResponseEntity<byte[]> proxy(HttpServletRequest request) {
-        return proxyService.forward(
+        return proxyService.forwardWithAuthenticatedBearer(
                 properties.getServices().getAuditUrl(),
                 "auditoría",
                 request,

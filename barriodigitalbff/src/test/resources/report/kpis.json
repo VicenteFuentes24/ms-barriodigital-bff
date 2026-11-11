@@ -1,0 +1,1 @@
+{"range":{"from":"2026-11-01T00:00:00Z","to":"2026-11-02T00:00:00Z"},"totalRequests":2,"requestsByStatus":{"INGRESADO":1,"ADMITIDO":0,"EN_GESTION":0,"EN_TERRENO":0,"RESUELTO":1,"RECHAZADO":0},"resolvedRequests":1,"averageResolutionSeconds":3600.5}
